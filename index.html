@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Tabata Timer</title>
+  <meta name="theme-color" content="#111418">
+  <meta name="description" content="Tabata-style interval timer with custom workouts, voice cues and countdowns.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- HOME -->
+  <section id="view-home" class="view active">
+    <header class="topbar">
+      <h1>Tabata Timer</h1>
+      <button id="btn-install" class="btn ghost small hidden">Install</button>
+    </header>
+    <main class="content">
+      <ul id="workout-list" class="workout-list"></ul>
+      <p id="empty-msg" class="empty hidden">No workouts yet. Tap <strong>New workout</strong> to create one.</p>
+    </main>
+    <footer class="bottombar">
+      <button id="btn-new" class="btn primary block">+ New workout</button>
+    </footer>
+  </section>
+
+  <!-- EDITOR -->
+  <section id="view-edit" class="view">
+    <header class="topbar">
+      <button id="btn-edit-back" class="btn ghost small" aria-label="Back">&larr; Back</button>
+      <h1 id="edit-title">New workout</h1>
+      <span></span>
+    </header>
+    <main class="content">
+      <form id="edit-form" autocomplete="off">
+        <label class="field">
+          <span>Workout name</span>
+          <input id="f-name" type="text" placeholder="e.g. Morning HIIT" maxlength="60" required>
+        </label>
+
+        <div class="grid2">
+          <label class="field">
+            <span>Number of exercises</span>
+            <div class="stepper">
+              <button type="button" data-step="-1" data-target="f-count">−</button>
+              <input id="f-count" type="number" min="1" max="50" value="4" inputmode="numeric">
+              <button type="button" data-step="1" data-target="f-count">+</button>
+            </div>
+          </label>
+          <label class="field">
+            <span>Number of sets</span>
+            <div class="stepper">
+              <button type="button" data-step="-1" data-target="f-sets">−</button>
+              <input id="f-sets" type="number" min="1" max="50" value="3" inputmode="numeric">
+              <button type="button" data-step="1" data-target="f-sets">+</button>
+            </div>
+          </label>
+        </div>
+
+        <div class="grid2">
+          <label class="field">
+            <span>Rest between sets (sec)</span>
+            <input id="f-setrest" type="number" min="0" max="3600" value="60" inputmode="numeric">
+          </label>
+          <label class="field">
+            <span>Default duration (sec)</span>
+            <div class="row-inline">
+              <input id="f-default" type="number" min="1" max="3600" value="20" inputmode="numeric">
+              <button type="button" id="btn-apply-all" class="btn ghost small">Apply to all</button>
+            </div>
+          </label>
+        </div>
+
+        <h2 class="section-title">Exercises</h2>
+        <ol id="exercise-rows" class="exercise-rows"></ol>
+
+        <p id="edit-summary" class="summary"></p>
+      </form>
+    </main>
+    <footer class="bottombar">
+      <button id="btn-save" class="btn primary block" type="submit" form="edit-form">Save workout</button>
+    </footer>
+  </section>
+
+  <!-- TIMER -->
+  <section id="view-timer" class="view timer phase-prep">
+    <header class="topbar">
+      <button id="btn-timer-close" class="btn ghost small" aria-label="Stop and close">✕ Stop</button>
+      <h1 id="t-workout">Workout</h1>
+      <button id="btn-mute" class="btn ghost small" aria-label="Toggle sound">🔊</button>
+    </header>
+    <main class="timer-main">
+      <div id="t-phase" class="phase-label">GET READY</div>
+      <div class="ring-wrap">
+        <svg class="ring" viewBox="0 0 200 200" aria-hidden="true">
+          <circle class="ring-bg" cx="100" cy="100" r="90"></circle>
+          <circle id="t-ring" class="ring-fg" cx="100" cy="100" r="90"></circle>
+        </svg>
+        <div class="ring-center">
+          <div id="t-time" class="time">5</div>
+        </div>
+      </div>
+      <div id="t-exercise" class="exercise-name">&nbsp;</div>
+      <div class="meta">
+        <div><span class="meta-label">Set</span><span id="t-set" class="meta-val">1/1</span></div>
+        <div><span class="meta-label">Exercise</span><span id="t-ex" class="meta-val">1/1</span></div>
+        <div><span class="meta-label">Remaining</span><span id="t-total" class="meta-val">0:00</span></div>
+      </div>
+      <div id="t-next" class="next-up">&nbsp;</div>
+    </main>
+    <footer class="timer-controls">
+      <button id="btn-prev" class="btn round" aria-label="Previous">⏮</button>
+      <button id="btn-pause" class="btn round big" aria-label="Pause">⏸</button>
+      <button id="btn-skip" class="btn round" aria-label="Skip">⏭</button>
+    </footer>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+</html>
