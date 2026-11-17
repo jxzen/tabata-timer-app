@@ -28,6 +28,7 @@ if (!workouts) {
     id: uid(),
     name: 'Sample Tabata',
     sets: 3,
+    exRest: 10,
     setRest: 60,
     exercises: [
       { name: 'Jumping Jacks', duration: 20 },
@@ -74,8 +75,11 @@ function buildSegments(w) {
         segs.push({ type: 'countdown', dur: COUNTDOWN_SECONDS, set: s, ex: i, next: e.name });
       }
       segs.push({ type: 'work', dur: e.duration, set: s, ex: i, name: e.name, firstOfSet: i === 0 });
+      if (i < n - 1 && (w.exRest || 0) > 0) {
+        segs.push({ type: 'rest', kind: 'ex', dur: w.exRest, set: s, ex: i, next: w.exercises[i + 1].name });
+      }
       if (i === n - 1 && s < w.sets && w.setRest > 0) {
-        segs.push({ type: 'rest', dur: w.setRest, set: s, ex: i, next: w.exercises[0].name });
+        segs.push({ type: 'rest', kind: 'set', dur: w.setRest, set: s, ex: i, next: w.exercises[0].name });
       }
     }
   }
@@ -112,7 +116,7 @@ function renderHome() {
     li.className = 'card';
     li.innerHTML = `
       <h3>${esc(w.name)}</h3>
-      <p class="sub">${w.exercises.length} exercise${w.exercises.length === 1 ? '' : 's'} · ${w.sets} set${w.sets === 1 ? '' : 's'} · ${w.setRest}s rest · ${fmt(totalSeconds(w))} total</p>
+      <p class="sub">${w.exercises.length} exercise${w.exercises.length === 1 ? '' : 's'} · ${w.sets} set${w.sets === 1 ? '' : 's'} · ${w.exRest || 0}s rest between exercises · ${w.setRest}s between sets · ${fmt(totalSeconds(w))} total</p>
       <p class="ex-preview">${w.exercises.map((e) => `${esc(e.name)} (${e.duration}s)`).join(' · ')}</p>
       <div class="actions">
         <button class="btn primary" data-act="start">▶ Start</button>
@@ -148,6 +152,7 @@ function openEditor(w) {
   $('edit-title').textContent = w ? 'Edit workout' : 'New workout';
   $('f-name').value = w ? w.name : '';
   $('f-sets').value = w ? w.sets : 3;
+  $('f-exrest').value = w ? (w.exRest || 0) : 10;
   $('f-setrest').value = w ? w.setRest : 60;
   $('f-default').value = w ? (w.exercises[0]?.duration || 20) : 20;
   draftRows = w ? w.exercises.map((e) => ({ ...e })) : Array.from({ length: 4 }, () => ({ name: '', duration: 20 }));
@@ -190,6 +195,7 @@ function draftWorkout() {
   return {
     name: $('f-name').value.trim() || 'Workout',
     sets: clampInt($('f-sets').value, 1, 50, 1),
+    exRest: clampInt($('f-exrest').value, 0, 3600, 0),
     setRest: clampInt($('f-setrest').value, 0, 3600, 0),
     exercises: draftRows.map((r, i) => ({
       name: (r.name || '').trim() || `Exercise ${i + 1}`,
@@ -200,7 +206,7 @@ function draftWorkout() {
 
 function updateSummary() {
   const w = draftWorkout();
-  $('edit-summary').textContent = `Total time: ${fmt(totalSeconds(w))} (includes ${PREP_SECONDS}s start countdown and ${COUNTDOWN_SECONDS}s countdown before each exercise)`;
+  $('edit-summary').textContent = `Total time: ${fmt(totalSeconds(w))} (includes rests, ${PREP_SECONDS}s start countdown and ${COUNTDOWN_SECONDS}s countdown before each exercise)`;
 }
 
 document.querySelectorAll('.stepper button').forEach((b) => {
@@ -283,13 +289,18 @@ if ('speechSynthesis' in window) {
 }
 function speak(text) {
   if (settings.muted || !('speechSynthesis' in window)) return;
-  speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
-  if (voice) u.voice = voice;
+  if (voice) { u.voice = voice; u.lang = voice.lang; } else { u.lang = 'en-US'; }
   u.rate = 1.0;
   u.pitch = 1.0;
   u.volume = 1.0;
-  speechSynthesis.speak(u);
+  if (speechSynthesis.speaking || speechSynthesis.pending) {
+    speechSynthesis.cancel();
+    // Chrome can drop an utterance queued right after cancel(), so wait a beat.
+    setTimeout(() => speechSynthesis.speak(u), 60);
+  } else {
+    speechSynthesis.speak(u);
+  }
 }
 function unlockSpeech() {
   // A silent utterance during a user gesture unlocks speech on mobile browsers.
@@ -357,17 +368,23 @@ function enterSegment(i, announce = true) {
   renderSegment();
   if (!announce) return;
   const w = timer.workout;
+  const prev = timer.segs[i - 1];
   if (seg.type === 'prep') {
-    speak('Get ready');
+    speak(`Get ready. First exercise: ${seg.next}`);
   } else if (seg.type === 'work') {
     goBeep();
     const prefix = seg.firstOfSet && w.sets > 1 ? `Set ${seg.set}. ` : '';
     speak(prefix + seg.name);
   } else if (seg.type === 'rest') {
     goBeep();
-    speak(`Rest. ${seg.dur} seconds`);
+    speak(seg.kind === 'set'
+      ? `Rest ${seg.dur} seconds. Next set starts with ${seg.next}`
+      : `Rest ${seg.dur} seconds. Next up: ${seg.next}`);
+  } else if (seg.type === 'countdown' && !(prev && prev.type === 'rest')) {
+    // No rest before this countdown, so announce what's coming now.
+    speak(`Next: ${seg.next}`);
   }
-  // countdown segments: beeps come from onSecond()
+  // countdown beeps come from onSecond()
 }
 
 function finish() {
@@ -432,7 +449,7 @@ function renderSegment() {
     $('t-next').textContent = nxt ? `Next: ${nxt.name}` : 'Last exercise!';
   } else if (seg.type === 'rest') {
     $('t-exercise').textContent = 'Rest';
-    $('t-next').textContent = `Next: Set ${seg.set + 1} · ${seg.next}`;
+    $('t-next').textContent = seg.kind === 'set' ? `Next: Set ${seg.set + 1} · ${seg.next}` : `Next: ${seg.next}`;
   } else {
     $('t-exercise').textContent = seg.next;
     $('t-next').textContent = seg.type === 'prep' ? 'Starting soon' : '';

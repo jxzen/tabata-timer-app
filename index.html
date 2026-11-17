@@ -62,9 +62,16 @@
 
         <div class="grid2">
           <label class="field">
+            <span>Rest between exercises (sec)</span>
+            <input id="f-exrest" type="number" min="0" max="3600" value="10" inputmode="numeric">
+          </label>
+          <label class="field">
             <span>Rest between sets (sec)</span>
             <input id="f-setrest" type="number" min="0" max="3600" value="60" inputmode="numeric">
           </label>
+        </div>
+
+        <div class="grid2">
           <label class="field">
             <span>Default duration (sec)</span>
             <div class="row-inline">
@@ -72,6 +79,7 @@
               <button type="button" id="btn-apply-all" class="btn ghost small">Apply to all</button>
             </div>
           </label>
+          <span></span>
         </div>
 
         <h2 class="section-title">Exercises</h2>

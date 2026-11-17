@@ -1,5 +1,5 @@
 // Offline cache for Tabata Timer. Bump VERSION when files change.
-const VERSION = 'tabata-v1';
+const VERSION = 'tabata-v2';
 const FILES = [
   './',
   './index.html',
@@ -27,7 +27,7 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: 'no-cache' })
       .then((res) => {
         const copy = res.clone();
         caches.open(VERSION).then((c) => c.put(e.request, copy));
