@@ -42,7 +42,18 @@ button, input { font: inherit; color: inherit; }
   border-bottom: 1px solid var(--line);
 }
 .topbar h1 { font-size: 1.15rem; margin: 0; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#view-home .topbar { grid-template-columns: 1fr auto; }
+#view-home .topbar { grid-template-columns: 1fr auto auto; }
+select {
+  width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  padding: 12px; font-size: 1rem; color: var(--text);
+}
+input[type=range] { width: 100%; accent-color: var(--accent); height: 32px; }
+.field output { color: var(--text); font-weight: 600; margin-left: 4px; }
+.hint { color: var(--muted); font-size: 0.85rem; margin: -6px 0 18px; }
+.row-buttons { display: flex; gap: 10px; margin: 8px 0 20px; }
+.row-buttons .btn.primary { flex: 1; }
+.tip { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; color: var(--muted); font-size: 0.9rem; line-height: 1.5; }
+.tip strong { color: var(--text); }
 #view-home .topbar h1 { text-align: left; font-size: 1.4rem; }
 
 .content { flex: 1; padding: 16px; max-width: 640px; width: 100%; margin: 0 auto; }

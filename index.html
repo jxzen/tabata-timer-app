@@ -17,6 +17,7 @@
     <header class="topbar">
       <h1>Tabata Timer</h1>
       <button id="btn-install" class="btn ghost small hidden">Install</button>
+      <button id="btn-settings" class="btn ghost small" aria-label="Voice settings">🎙 Voice</button>
     </header>
     <main class="content">
       <ul id="workout-list" class="workout-list"></ul>
@@ -91,6 +92,43 @@
     <footer class="bottombar">
       <button id="btn-save" class="btn primary block" type="submit" form="edit-form">Save workout</button>
     </footer>
+  </section>
+
+  <!-- VOICE SETTINGS -->
+  <section id="view-settings" class="view">
+    <header class="topbar">
+      <button id="btn-settings-back" class="btn ghost small" aria-label="Back">&larr; Back</button>
+      <h1>Voice</h1>
+      <span></span>
+    </header>
+    <main class="content">
+      <label class="field">
+        <span>Voice</span>
+        <select id="s-voice"></select>
+      </label>
+      <p class="hint">Female and higher-quality voices are listed first.</p>
+
+      <label class="field">
+        <span>Energy (pitch) <output id="s-pitch-val"></output></span>
+        <input id="s-pitch" type="range" min="0.8" max="1.6" step="0.05">
+      </label>
+      <label class="field">
+        <span>Speed <output id="s-rate-val"></output></span>
+        <input id="s-rate" type="range" min="0.7" max="1.5" step="0.05">
+      </label>
+
+      <div class="row-buttons">
+        <button id="btn-test-voice" class="btn primary">▶ Test voice</button>
+        <button id="btn-reset-voice" class="btn ghost">Reset</button>
+      </div>
+
+      <div class="tip">
+        <strong>Clearest sound on Android:</strong> the voice comes from your phone's text-to-speech engine.
+        Go to <em>Settings → Accessibility (or General management) → Text-to-speech output</em>,
+        choose <em>Speech Services by Google</em>, tap ⚙ → <em>Install voice data</em> → <em>English (United States)</em>,
+        pick a female voice and make sure it's downloaded. It will then appear in the list above.
+      </div>
+    </main>
   </section>
 
   <!-- TIMER -->

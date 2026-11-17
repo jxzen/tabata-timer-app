@@ -1,5 +1,5 @@
 // Offline cache for Tabata Timer. Bump VERSION when files change.
-const VERSION = 'tabata-v2';
+const VERSION = 'tabata-v3';
 const FILES = [
   './',
   './index.html',

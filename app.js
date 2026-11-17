@@ -14,9 +14,10 @@ function loadWorkouts() {
 function saveWorkouts(list) {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(list)); } catch (e) { /* ignore */ }
 }
+const DEFAULT_SETTINGS = { muted: false, voiceURI: '', rate: 1.08, pitch: 1.2 };
 function loadSettings() {
-  try { return Object.assign({ muted: false }, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); }
-  catch (e) { return { muted: false }; }
+  try { return Object.assign({}, DEFAULT_SETTINGS, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); }
+  catch (e) { return Object.assign({}, DEFAULT_SETTINGS); }
 }
 function saveSettings() {
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* ignore */ }
@@ -258,30 +259,62 @@ function ensureAudio() {
   }
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
 }
-function beep(freq = 880, ms = 150, vol = 0.5) {
+let masterGain = null;
+function beep(freq = 880, ms = 150, vol = 0.3) {
   if (settings.muted || !audioCtx) return;
-  const t = audioCtx.currentTime;
+  if (!masterGain) {
+    // Keep the overall level well below clipping; a limiter catches any peaks.
+    const comp = audioCtx.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.ratio.value = 12; comp.attack.value = 0.002; comp.release.value = 0.1;
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.8;
+    masterGain.connect(comp).connect(audioCtx.destination);
+  }
+  const t = audioCtx.currentTime + 0.01;
+  const dur = ms / 1000;
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
   osc.type = 'sine';
-  osc.frequency.value = freq;
-  gain.gain.setValueAtTime(0.0001, t);
-  gain.gain.exponentialRampToValueAtTime(vol, t + 0.01);
-  gain.gain.exponentialRampToValueAtTime(0.0001, t + ms / 1000);
-  osc.connect(gain).connect(audioCtx.destination);
+  osc.frequency.setValueAtTime(freq, t);
+  // Smooth attack and release so the tone has no clicks or crackle.
+  gain.gain.setValueAtTime(0, t);
+  gain.gain.linearRampToValueAtTime(vol, t + 0.012);
+  gain.gain.setValueAtTime(vol, t + Math.max(0.013, dur - 0.06));
+  gain.gain.linearRampToValueAtTime(0, t + dur);
+  osc.connect(gain).connect(masterGain);
   osc.start(t);
-  osc.stop(t + ms / 1000 + 0.05);
+  osc.stop(t + dur + 0.02);
 }
-const tick = () => beep(880, 160, 0.5);
-const goBeep = () => beep(1320, 450, 0.6);
-function doneChime() { beep(988, 180); setTimeout(() => beep(1319, 180), 200); setTimeout(() => beep(1568, 500), 400); }
+const tick = () => beep(880, 140, 0.3);
+const goBeep = () => beep(1175, 300, 0.35);
+function doneChime() { beep(988, 160); setTimeout(() => beep(1319, 160), 180); setTimeout(() => beep(1568, 400), 360); }
+
+/* ---- Voice ---- */
+const FEMALE_RE = /female|woman|samantha|zira|aria|jenny|michelle|emma|ava\b|allison|susan|karen|moira|tessa|fiona|victoria|serena|kate|libby|sonia|natasha|hazel|heather|catherine|joanna|salli|kimberly|ivy|kendra|nicole|olivia|amy|google us english|x-sfg|x-tpf|x-tpc|x-iob|x-iog/i;
+const MALE_RE = /\bmale\b|\bman\b|guy|david|mark|james|daniel|alex\b|fred|tom\b|ryan|george|matthew|joey|justin|brian|google uk english male|x-iol|x-tpd|x-iom/i;
+const HQ_RE = /natural|neural|online|enhanced|premium|high/i;
 
 let voice = null;
+function englishVoices() {
+  if (!('speechSynthesis' in window)) return [];
+  return speechSynthesis.getVoices().filter((v) => /^en/i.test(v.lang));
+}
+function voiceScore(v) {
+  let s = 0;
+  if (FEMALE_RE.test(v.name) || FEMALE_RE.test(v.voiceURI)) s += 100;
+  else if (MALE_RE.test(v.name) || MALE_RE.test(v.voiceURI)) s -= 100;
+  if (HQ_RE.test(v.name)) s += 30;
+  if (!v.localService) s += 20; // network voices are usually the higher-quality ones
+  if (/^en[-_]US/i.test(v.lang)) s += 10;
+  if (v.default) s += 5;
+  return s;
+}
 function pickVoice() {
-  if (!('speechSynthesis' in window)) return;
-  const voices = speechSynthesis.getVoices();
-  voice = voices.find((v) => /^en[-_]US/i.test(v.lang) && v.localService)
-    || voices.find((v) => /^en/i.test(v.lang)) || null;
+  const voices = englishVoices();
+  if (!voices.length) return;
+  voice = (settings.voiceURI && voices.find((v) => v.voiceURI === settings.voiceURI))
+    || voices.slice().sort((a, b) => voiceScore(b) - voiceScore(a))[0];
+  if (currentView === 'settings') renderSettings();
 }
 if ('speechSynthesis' in window) {
   pickVoice();
@@ -291,8 +324,8 @@ function speak(text) {
   if (settings.muted || !('speechSynthesis' in window)) return;
   const u = new SpeechSynthesisUtterance(text);
   if (voice) { u.voice = voice; u.lang = voice.lang; } else { u.lang = 'en-US'; }
-  u.rate = 1.0;
-  u.pitch = 1.0;
+  u.rate = settings.rate;
+  u.pitch = settings.pitch;
   u.volume = 1.0;
   if (speechSynthesis.speaking || speechSynthesis.pending) {
     speechSynthesis.cancel();
@@ -369,20 +402,24 @@ function enterSegment(i, announce = true) {
   if (!announce) return;
   const w = timer.workout;
   const prev = timer.segs[i - 1];
+  // Beep first, then speak once the beep has finished, so they never overlap.
+  const afterBeep = (text) => setTimeout(() => { if (timer && timer.idx === i && !timer.paused) speak(text); }, 330);
   if (seg.type === 'prep') {
-    speak(`Get ready. First exercise: ${seg.next}`);
+    speak(`Get ready! First up: ${seg.next}!`);
   } else if (seg.type === 'work') {
     goBeep();
-    const prefix = seg.firstOfSet && w.sets > 1 ? `Set ${seg.set}. ` : '';
-    speak(prefix + seg.name);
+    const isLast = seg.set === w.sets && seg.ex === w.exercises.length - 1;
+    if (seg.firstOfSet && w.sets > 1) afterBeep(`Set ${seg.set}! ${seg.name}! Let's go!`);
+    else if (isLast && w.exercises.length * w.sets > 1) afterBeep(`Last one! ${seg.name}! Give it everything!`);
+    else afterBeep(`${seg.name}! Go!`);
   } else if (seg.type === 'rest') {
     goBeep();
-    speak(seg.kind === 'set'
-      ? `Rest ${seg.dur} seconds. Next set starts with ${seg.next}`
-      : `Rest ${seg.dur} seconds. Next up: ${seg.next}`);
+    afterBeep(seg.kind === 'set'
+      ? `Great set! Rest ${seg.dur} seconds. Next set starts with ${seg.next}!`
+      : `Nice work! Rest ${seg.dur} seconds. Next up: ${seg.next}!`);
   } else if (seg.type === 'countdown' && !(prev && prev.type === 'rest')) {
     // No rest before this countdown, so announce what's coming now.
-    speak(`Next: ${seg.next}`);
+    speak(`Next up: ${seg.next}!`);
   }
   // countdown beeps come from onSecond()
 }
@@ -401,7 +438,7 @@ function finish() {
   $('btn-pause').textContent = '↻';
   $('btn-pause').setAttribute('aria-label', 'Restart');
   doneChime();
-  setTimeout(() => speak('Workout complete. Great job!'), 300);
+  setTimeout(() => speak('Workout complete! You crushed it! Amazing job!'), 800);
   releaseWakeLock();
 }
 
@@ -428,7 +465,8 @@ function onTick() {
 function onSecond(sec) {
   const seg = timer.segs[timer.idx];
   $('t-time').textContent = seg.dur >= 60 ? fmt(sec) : sec;
-  if (seg.type === 'prep' || seg.type === 'countdown') {
+  if (seg.type === 'countdown' || (seg.type === 'prep' && sec <= 3)) {
+    // In the 5s start countdown the voice speaks during 5-4, then beeps 3-2-1.
     tick();
   }
 }
@@ -534,6 +572,52 @@ $('btn-mute').onclick = () => {
   if (settings.muted && 'speechSynthesis' in window) speechSynthesis.cancel();
   saveSettings();
   updateMuteBtn();
+};
+
+/* ================= Voice settings ================= */
+function voiceLabel(v) {
+  const tags = [];
+  if (FEMALE_RE.test(v.name) || FEMALE_RE.test(v.voiceURI)) tags.push('female');
+  if (HQ_RE.test(v.name) || !v.localService) tags.push('HQ');
+  return `${v.name} (${v.lang})${tags.length ? ' · ' + tags.join(', ') : ''}`;
+}
+function renderSettings() {
+  const sel = $('s-voice');
+  const voices = englishVoices().sort((a, b) => voiceScore(b) - voiceScore(a));
+  sel.innerHTML = '';
+  if (!voices.length) {
+    sel.innerHTML = '<option>Default voice</option>';
+  }
+  voices.forEach((v) => {
+    const o = document.createElement('option');
+    o.value = v.voiceURI;
+    o.textContent = voiceLabel(v);
+    if (voice && v.voiceURI === voice.voiceURI) o.selected = true;
+    sel.appendChild(o);
+  });
+  $('s-pitch').value = settings.pitch;
+  $('s-rate').value = settings.rate;
+  $('s-pitch-val').textContent = Number(settings.pitch).toFixed(2);
+  $('s-rate-val').textContent = Number(settings.rate).toFixed(2) + '×';
+}
+$('btn-settings').onclick = () => { pickVoice(); renderSettings(); showView('settings'); };
+$('btn-settings-back').onclick = goHome;
+$('s-voice').onchange = () => {
+  settings.voiceURI = $('s-voice').value;
+  saveSettings(); pickVoice(); testVoice();
+};
+$('s-pitch').oninput = () => { settings.pitch = parseFloat($('s-pitch').value); $('s-pitch-val').textContent = settings.pitch.toFixed(2); saveSettings(); };
+$('s-rate').oninput = () => { settings.rate = parseFloat($('s-rate').value); $('s-rate-val').textContent = settings.rate.toFixed(2) + '×'; saveSettings(); };
+function testVoice() {
+  const wasMuted = settings.muted;
+  settings.muted = false;
+  speak("Let's go! Jumping jacks! You've got this!");
+  settings.muted = wasMuted;
+}
+$('btn-test-voice').onclick = testVoice;
+$('btn-reset-voice').onclick = () => {
+  Object.assign(settings, { voiceURI: '', rate: DEFAULT_SETTINGS.rate, pitch: DEFAULT_SETTINGS.pitch });
+  saveSettings(); pickVoice(); renderSettings();
 };
 
 /* ================= PWA install ================= */
