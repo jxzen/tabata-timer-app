@@ -1,5 +1,8 @@
 'use strict';
 
+// Bump this (and VERSION in sw.js) with every release.
+const APP_VERSION = '1.3.0';
+
 /* ================= Storage ================= */
 const STORE_KEY = 'tabata.workouts.v1';
 const SETTINGS_KEY = 'tabata.settings.v1';
@@ -251,43 +254,68 @@ $('edit-form').addEventListener('submit', (e) => {
 $('btn-edit-back').onclick = goHome;
 
 /* ================= Audio ================= */
-let audioCtx = null;
+// Beeps are short WAV clips played through <audio> elements, NOT the Web Audio API.
+// On Android, an open Web Audio stream makes the speech voice sound robotic/staticky,
+// because the text-to-speech output gets mixed through it.
+function makeWavUrl(tones, vol) {
+  const rate = 44100;
+  const total = Math.ceil(rate * Math.max(...tones.map((t) => t.at + t.dur)) + rate * 0.02);
+  const pcm = new Int16Array(total);
+  for (const { freq, at, dur } of tones) {
+    const start = Math.floor(at * rate), len = Math.floor(dur * rate);
+    const fade = Math.floor(0.012 * rate), fadeOut = Math.floor(0.06 * rate);
+    for (let i = 0; i < len; i++) {
+      let env = 1;
+      if (i < fade) env = i / fade;
+      else if (i > len - fadeOut) env = Math.max(0, (len - i) / fadeOut);
+      const v = Math.sin(2 * Math.PI * freq * (i / rate)) * env * vol;
+      pcm[start + i] = Math.max(-32767, Math.min(32767, pcm[start + i] + v * 32767));
+    }
+  }
+  const buf = new ArrayBuffer(44 + pcm.length * 2);
+  const dv = new DataView(buf);
+  const str = (o, t) => { for (let i = 0; i < t.length; i++) dv.setUint8(o + i, t.charCodeAt(i)); };
+  str(0, 'RIFF'); dv.setUint32(4, 36 + pcm.length * 2, true); str(8, 'WAVE');
+  str(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, rate, true); dv.setUint32(28, rate * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+  str(36, 'data'); dv.setUint32(40, pcm.length * 2, true);
+  new Int16Array(buf, 44).set(pcm);
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+}
+const SOUND_URLS = {
+  tick: makeWavUrl([{ freq: 880, at: 0, dur: 0.14 }], 0.5),
+  go: makeWavUrl([{ freq: 1175, at: 0, dur: 0.3 }], 0.55),
+  done: makeWavUrl([{ freq: 988, at: 0, dur: 0.16 }, { freq: 1319, at: 0.18, dur: 0.16 }, { freq: 1568, at: 0.36, dur: 0.4 }], 0.5),
+};
+const soundEls = {};
+function getSound(name) {
+  if (!soundEls[name]) {
+    const el = new Audio(SOUND_URLS[name]);
+    el.preload = 'auto';
+    soundEls[name] = el;
+  }
+  return soundEls[name];
+}
 function ensureAudio() {
-  if (!audioCtx) {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (AC) audioCtx = new AC();
-  }
-  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  // Called from a tap: prime each clip so later plays are allowed on mobile.
+  Object.keys(SOUND_URLS).forEach((n) => {
+    const el = getSound(n);
+    if (el.dataset.primed) return;
+    el.muted = true;
+    el.play().then(() => { el.pause(); el.currentTime = 0; el.muted = false; el.dataset.primed = '1'; })
+      .catch(() => { el.muted = false; });
+  });
 }
-let masterGain = null;
-function beep(freq = 880, ms = 150, vol = 0.3) {
-  if (settings.muted || !audioCtx) return;
-  if (!masterGain) {
-    // Keep the overall level well below clipping; a limiter catches any peaks.
-    const comp = audioCtx.createDynamicsCompressor();
-    comp.threshold.value = -12; comp.ratio.value = 12; comp.attack.value = 0.002; comp.release.value = 0.1;
-    masterGain = audioCtx.createGain();
-    masterGain.gain.value = 0.8;
-    masterGain.connect(comp).connect(audioCtx.destination);
-  }
-  const t = audioCtx.currentTime + 0.01;
-  const dur = ms / 1000;
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(freq, t);
-  // Smooth attack and release so the tone has no clicks or crackle.
-  gain.gain.setValueAtTime(0, t);
-  gain.gain.linearRampToValueAtTime(vol, t + 0.012);
-  gain.gain.setValueAtTime(vol, t + Math.max(0.013, dur - 0.06));
-  gain.gain.linearRampToValueAtTime(0, t + dur);
-  osc.connect(gain).connect(masterGain);
-  osc.start(t);
-  osc.stop(t + dur + 0.02);
+function playSound(name) {
+  if (settings.muted) return;
+  const el = getSound(name);
+  el.muted = false;
+  try { el.currentTime = 0; } catch (e) { /* ignore */ }
+  el.play().catch(() => {});
 }
-const tick = () => beep(880, 140, 0.3);
-const goBeep = () => beep(1175, 300, 0.35);
-function doneChime() { beep(988, 160); setTimeout(() => beep(1319, 160), 180); setTimeout(() => beep(1568, 400), 360); }
+const tick = () => playSound('tick');
+const goBeep = () => playSound('go');
+const doneChime = () => playSound('done');
 
 /* ---- Voice ---- */
 const FEMALE_RE = /female|woman|samantha|zira|aria|jenny|michelle|emma|ava\b|allison|susan|karen|moira|tessa|fiona|victoria|serena|kate|libby|sonia|natasha|hazel|heather|catherine|joanna|salli|kimberly|ivy|kendra|nicole|olivia|amy|google us english|x-sfg|x-tpf|x-tpc|x-iob|x-iog/i;
@@ -636,8 +664,40 @@ $('btn-install').onclick = async () => {
 };
 window.addEventListener('appinstalled', () => $('btn-install').classList.add('hidden'));
 
+/* ================= Version & updates ================= */
+$('app-version').textContent = 'Version ' + APP_VERSION;
+let swReg = null;
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  const hadController = !!navigator.serviceWorker.controller;
+  // When a new version's service worker takes over, reload to run the new code
+  // (unless a workout is in progress; then it applies next launch).
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (hadController && !timer) location.reload();
+  });
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').then((r) => { swReg = r; r.update().catch(() => {}); }).catch(() => {});
+  });
 }
+async function checkForUpdates() {
+  const btn = $('btn-update');
+  btn.textContent = 'Checking…';
+  try {
+    const res = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    const latest = (await res.json()).version;
+    if (latest === APP_VERSION) {
+      btn.textContent = 'Up to date ✓';
+    } else {
+      btn.textContent = `Updating to ${latest}…`;
+      if (swReg) await swReg.update().catch(() => {});
+      if ('caches' in window) for (const k of await caches.keys()) await caches.delete(k);
+      location.reload();
+      return;
+    }
+  } catch (e) {
+    btn.textContent = 'Offline – try later';
+  }
+  setTimeout(() => { btn.textContent = 'Check for updates'; }, 3000);
+}
+$('btn-update').onclick = checkForUpdates;
 
 renderHome();

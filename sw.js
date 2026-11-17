@@ -1,5 +1,5 @@
-// Offline cache for Tabata Timer. Bump VERSION when files change.
-const VERSION = 'tabata-v3';
+// Offline cache for Tabata Timer. Keep VERSION in sync with APP_VERSION in app.js.
+const VERSION = 'tabata-1.3.0';
 const FILES = [
   './',
   './index.html',
